@@ -3,6 +3,11 @@
 
 #include "RAK3401Board.h"
 
+#ifdef ENABLE_BTHOME_TELEMETRY
+#include <bluefruit.h>
+#include "BTHomeTelemetry.h"
+#endif
+
 #ifdef NRF52_POWER_MANAGEMENT
 // Static configuration for power management
 // Values set in variant.h defines
@@ -64,3 +69,32 @@ void RAK3401Board::begin() {
   digitalWrite(SX126X_POWER_EN, HIGH);
   delay(1);  // SKY66122 turn-on settling time (tON = 3us typ)
 }
+
+#ifdef ENABLE_BTHOME_TELEMETRY
+// BLE is already initialized for BTHome; reuse its SoftDevice for DFU.
+bool RAK3401Board::startOTAUpdate(const char* id, char reply[]) {
+  (void)id;
+  if (!BTHomeTelemetry::prepareForOTA()) {
+    return NRF52Board::startOTAUpdate(id, reply);
+  }
+  static BLEDfu bledfu;
+  Bluefruit.setTxPower(4);
+  Bluefruit.setName("RAK3401_OTA");
+  bledfu.begin();
+  Bluefruit.Advertising.clearData();
+  Bluefruit.ScanResponse.clearData();
+  Bluefruit.Advertising.setType(BLE_GAP_ADV_TYPE_CONNECTABLE_SCANNABLE_UNDIRECTED);
+  if (!Bluefruit.Advertising.addFlags(BLE_GAP_ADV_FLAGS_LE_ONLY_GENERAL_DISC_MODE) ||
+      !Bluefruit.Advertising.addTxPower() ||
+      !Bluefruit.Advertising.addName()) return false;
+  Bluefruit.Advertising.restartOnDisconnect(true);
+  Bluefruit.Advertising.setInterval(32, 244);
+  Bluefruit.Advertising.setFastTimeout(30);
+  if (!Bluefruit.Advertising.start(0)) return false;
+  uint8_t mac[6] = {0};
+  Bluefruit.getAddr(mac);
+  sprintf(reply, "OK - mac: %02X:%02X:%02X:%02X:%02X:%02X",
+          mac[5], mac[4], mac[3], mac[2], mac[1], mac[0]);
+  return true;
+}
+#endif // ENABLE_BTHOME_TELEMETRY

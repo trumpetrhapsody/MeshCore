@@ -20,6 +20,10 @@ public:
   RAK3401Board() : NRF52Board("RAK3401_OTA") {}
   void begin();
 
+#ifdef ENABLE_BTHOME_TELEMETRY
+  bool startOTAUpdate(const char* id, char reply[]) override;
+#endif
+
   #define BATTERY_SAMPLES 8
 
   uint16_t getBattMilliVolts() override {
