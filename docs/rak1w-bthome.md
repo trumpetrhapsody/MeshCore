@@ -2,7 +2,7 @@
 
 Experimental extension for RAK3401 + RAK13302 (WisMesh 1W Booster), based on [MeshCore](https://github.com/meshcore-dev/MeshCore).
 
-**Status:** BTHome packet encoder tested locally. Complete firmware compile, repeater function, Bluetooth DFU, flash layout, and power draw are **not yet validated on hardware**.
+**Status:** BTHome encoder tests and PlatformIO firmware build have passed in GitHub Actions. Actual repeater function, Bluetooth DFU, flash/boot behavior and power draw are **not yet validated on hardware**.
 
 ## Features
 - Normal LoRa repeater path and its identity/settings code are retained.
@@ -22,7 +22,7 @@ pio run -e RAK_3401_repeater_bthome
 pio run -e RAK_3401_repeater_bthome -t create_uf2
 ```
 
-The dedicated GitHub Actions workflow attempts to compile and publish .hex, .bin and .uf2 artifacts. For forks, Actions might need manual enabling.
+The dedicated GitHub Actions workflow successfully compiled and published .hex, .bin and .uf2 artifacts on 2026-11-21 ([successful run](https://github.com/trumpetrhapsody/MeshCore/actions/runs/44947591421)). Reported memory use: 35,756 bytes RAM (15.2%) and 411,880 bytes flash (57.8%). These numbers demonstrate successful compilation, not field reliability.
 
 ## Home Assistant
 Use an existing Bluetooth adapter or an ESPHome Bluetooth proxy that is physically within BLE reception range. The expected BTHome device name is `RAK1W-BTHome`. The existing LoRa antenna does not carry Bluetooth.
