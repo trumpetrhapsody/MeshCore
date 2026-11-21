@@ -2,7 +2,7 @@
 
 Experimental firmware, forked from [MeshCore](https://github.com/meshcore-dev/MeshCore).
 
-**This branch is NOT hardware-validated; keep your known-good stock image and identity/settings backup.** It has passed earlier firmware compilation and unit testing. The hardened changes must pass another CI build before use.
+**Automated build and payload/settings tests PASSED on 2026-11-21. This branch remains NOT hardware-validated.** Keep a known-good stock image and identity/settings backup. [Successful hardened firmware and stock-target build](https://github.com/trumpetrhapsody/MeshCore/actions/runs/44950129255). Hardened image: 35,772 bytes RAM (15.2%) and 415,976 bytes flash (58.4% of its BLE-safe partition); Nordic DFU ZIP verified and included in the build artifact.
 
 ## Default behavior and safe disable
 
