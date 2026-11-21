@@ -1,0 +1,39 @@
+name: Build RAK 1W BTHome repeater
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [rak1w-bthome]
+    paths:
+      - 'examples/simple_repeater/**'
+      - 'variants/rak3401/**'
+      - 'test/bthome/**'
+      - '.github/workflows/build-rak1w-bthome.yml'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Test BTHome packet encoding
+        run: |
+          c++ -std=c++17 -Wall -Wextra -Werror test/bthome/test_bthome_payload.cpp -o /tmp/test_bthome
+          /tmp/test_bthome
+      - name: Install PlatformIO
+        run: pip install -U platformio
+      - name: Build firmware
+        run: pio run -e RAK_3401_repeater_bthome
+      - name: Generate UF2 image
+        run: pio run -e RAK_3401_repeater_bthome -t create_uf2
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rak3401-meshcore-repeater-bthome
+          path: |
+            .pio/build/RAK_3401_repeater_bthome/firmware.bin
+            .pio/build/RAK_3401_repeater_bthome/firmware.hex
+            .pio/build/RAK_3401_repeater_bthome/firmware.uf2
+          if-no-files-found: error
