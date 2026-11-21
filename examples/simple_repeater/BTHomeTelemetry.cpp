@@ -22,6 +22,10 @@
 namespace {
 constexpr const char* kSettingsFile = "/bthome.cfg";
 constexpr const char* kTempFile = "/bthome.tmp";
+constexpr const char* kBootGuardFile = "/bthome.guard";
+constexpr uint32_t kBootStableMs = 60000UL;
+constexpr uint16_t kOTAMaxSeconds = 300; // Limit unconnected BLE DFU advertising to five minutes.
+
 constexpr uint32_t kFailureRetryMs = 60000UL;
 constexpr uint8_t kMaxFailures = 3;
 constexpr size_t kReplyLength = 160;
@@ -37,6 +41,11 @@ bool initialized = false;         // Bluefruit / SoftDevice successfully started
 bool dfuReady = false;
 bool reporting = false;           // timer and BLE bursts enabled
 bool otaMode = false;
+uint32_t otaStartedAt = 0;
+bool guardBlocked = false; // Persists after a crash until bthome on/off is explicitly used.
+bool guardArmed = false;
+uint32_t guardArmedAt = 0;
+uint32_t guardClearRetryAt = 0;
 uint8_t packetId = 0;
 uint8_t consecutiveFailures = 0;
 uint32_t nextRetryAt = 0;
@@ -106,6 +115,37 @@ bool persistSettings(bool enable, uint16_t minutes) {
   return true;
 }
 
+// The marker is created *before* BLE setup. A crash, watchdog reboot, or
+// power cut during the initial stabilization window leaves it present, so the
+// next boot skips Bluetooth and keeps the LoRa repeater available.
+bool armBootGuard() {
+  if (InternalFS.exists(kBootGuardFile)) {
+    guardBlocked = true;
+    return false;
+  }
+  Adafruit_LittleFS_Namespace::File file =
+      InternalFS.open(kBootGuardFile, Adafruit_LittleFS_Namespace::FILE_O_WRITE);
+  if (!file) return false;
+  const size_t n = file.write(static_cast<uint8_t>(0xB7));
+  file.flush();
+  file.close();
+  if (n != 1) return false;
+  guardArmed = true;
+  guardArmedAt = millis();
+  return true;
+}
+
+void clearBootGuard() {
+  if (!InternalFS.exists(kBootGuardFile) || InternalFS.remove(kBootGuardFile)) {
+    guardBlocked = false;
+    guardArmed = false;
+  } else {
+    // Avoid spinning on flash writes when the filesystem is unhealthy.
+    guardClearRetryAt = millis() + kBootStableMs;
+    Serial.println("BTHome: could not clear boot guard; retrying later");
+  }
+}
+
 bool sendSnapshot() {
   if (!initialized || !reporting || otaMode) return false;
   if (Bluefruit.Advertising.isRunning()) return true;
@@ -151,12 +191,13 @@ void restoreAdvertisingMode() {
 }
 
 void reportStatus(char* reply) {
-  snprintf(reply, kReplyLength, "BTHome: saved=%s BLE=%s reports=%s every=%umin%s",
+  snprintf(reply, kReplyLength, "BTHome: saved=%s BLE=%s reports=%s every=%umin%s%s",
            configuredEnabled ? "on" : "off",
            initialized ? "on" : "off",
            reporting ? "on" : "off",
            static_cast<unsigned>(intervalMinutes),
-           corruptSettings ? " (config invalid)" : "");
+           corruptSettings ? " (config invalid)" : "",
+           guardBlocked ? " (boot guard blocked BLE; bthome on + reboot)" : "");
 }
 } // namespace
 
@@ -165,6 +206,13 @@ bool begin() {
   loadSettings();
   if (!configuredEnabled) {
     Serial.println("BTHome: OFF; starting repeater without Bluetooth stack");
+    return false;
+  }
+
+  if (!armBootGuard()) {
+    Serial.println(guardBlocked
+        ? "BTHome: BLE boot guard active after interrupted startup; LoRa only"
+        : "BTHome: cannot arm BLE boot guard; skipping Bluetooth for safety");
     return false;
   }
 
@@ -203,7 +251,35 @@ bool begin() {
 }
 
 void loop() {
-  if (!reporting || otaMode || !reportDue) return;
+  // Clearing the marker after a full minute of stable LoRa+BLE operation
+  // avoids a persistent reboot loop if enabling BLE triggers a crash.
+  if (guardArmed &&
+      static_cast<uint32_t>(millis() - guardArmedAt) >= kBootStableMs &&
+      (guardClearRetryAt == 0 ||
+       static_cast<int32_t>(millis() - guardClearRetryAt) >= 0)) {
+    clearBootGuard();
+  }
+
+  // BLE DFU entry is deliberately temporary. It must not advertise forever
+  // at a high frequency after an abandoned update.
+  if (otaMode) {
+    if (static_cast<uint32_t>(millis() - otaStartedAt) >=
+          static_cast<uint32_t>(kOTAMaxSeconds) * 1000UL &&
+        !Bluefruit.Periph.connected()) {
+      Bluefruit.Advertising.restartOnDisconnect(false);
+      if (Bluefruit.Advertising.isRunning()) Bluefruit.Advertising.stop();
+      otaMode = false;
+      restoreAdvertisingMode();
+      if (configuredEnabled && dfuReady && periodicTimer.getHandle()) {
+        reporting = true;
+        periodicTimer.start();
+        reportDue = true;
+      }
+      Serial.println("BTHome: BLE OTA window expired; restored normal mode");
+    }
+    return;
+  }
+  if (!reporting || !reportDue) return;
   if (Bluefruit.Advertising.isRunning()) return;
   if (consecutiveFailures && static_cast<int32_t>(millis() - nextRetryAt) < 0) {
     return;
@@ -239,6 +315,17 @@ bool handleCommand(const char* command, char* reply) {
       return true;
     }
     configuredEnabled = enabled;
+    // A manual toggle also clears the safety latch so the next reboot can
+    // intentionally retry BLE. On a power-cut/brownout this favors LoRa uptime.
+    if (guardBlocked || guardArmed || InternalFS.exists(kBootGuardFile)) {
+      if (!InternalFS.remove(kBootGuardFile) && InternalFS.exists(kBootGuardFile)) {
+        snprintf(reply, kReplyLength,
+                 "ERR: BLE setting saved, but boot guard could not be cleared");
+        return true;
+      }
+      guardBlocked = false;
+      guardArmed = false;
+    }
     if (!enabled) stopReports(); // Stop on-air output immediately.
     snprintf(reply, kReplyLength, "OK: BTHome %s saved; reboot to %s Bluetooth stack",
              enabled ? "on" : "off",
@@ -290,7 +377,7 @@ bool startOTA(char* reply) {
   Bluefruit.Advertising.setType(BLE_GAP_ADV_TYPE_CONNECTABLE_SCANNABLE_UNDIRECTED);
   Bluefruit.Advertising.setInterval(32, 244);
   Bluefruit.Advertising.setFastTimeout(30);
-  Bluefruit.Advertising.restartOnDisconnect(true);
+  Bluefruit.Advertising.restartOnDisconnect(false);
   Bluefruit.setTxPower(4);
   Bluefruit.setName("RAK3401_OTA");
   // DFU service UUID in advertisements, name in scan response for discovery.
@@ -299,7 +386,7 @@ bool startOTA(char* reply) {
       Bluefruit.Advertising.addTxPower() &&
       Bluefruit.Advertising.addService(dfuService) &&
       Bluefruit.ScanResponse.addName() &&
-      Bluefruit.Advertising.start(0);
+      Bluefruit.Advertising.start(kOTAMaxSeconds);
   if (!advOK) {
     Serial.println("BTHome: unable to enter BLE OTA; restoring telemetry mode");
     restoreAdvertisingMode();
@@ -313,9 +400,13 @@ bool startOTA(char* reply) {
   }
 
   otaMode = true;
+  otaStartedAt = millis();
+  // OTA may reboot into the bootloader before the normal one-minute guard
+  // window; a successful DFU initiation must not count as a BLE startup crash.
+  if (guardArmed) clearBootGuard();
   uint8_t mac[6] = {};
   Bluefruit.getAddr(mac);
-  snprintf(reply, kReplyLength, "OK - BLE DFU active; mac: %02X:%02X:%02X:%02X:%02X:%02X",
+  snprintf(reply, kReplyLength, "OK - BLE DFU 5min; mac: %02X:%02X:%02X:%02X:%02X:%02X",
            mac[5], mac[4], mac[3], mac[2], mac[1], mac[0]);
   return true;
 }
