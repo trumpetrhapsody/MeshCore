@@ -71,30 +71,30 @@ void RAK3401Board::begin() {
 }
 
 #ifdef ENABLE_BTHOME_TELEMETRY
-// BLE is already initialized for BTHome; reuse its SoftDevice for DFU.
+#include <nrf_soc.h>
+
+// Reuse MeshCore's board extension point; also available to authorized remote
+// repeater admins (and USB CLI). Do not change the shared CommonCLI parser.
+bool RAK3401Board::handleCommand(const char* command, uint32_t sender_timestamp,
+                                 char* reply) {
+  (void)sender_timestamp;
+  return BTHomeTelemetry::handleCommand(command, reply);
+}
+
 bool RAK3401Board::startOTAUpdate(const char* id, char reply[]) {
-  (void)id;
-  if (!BTHomeTelemetry::prepareForOTA()) {
-    return NRF52Board::startOTAUpdate(id, reply);
+  if (BTHomeTelemetry::bleInitialized()) {
+    // Bluefruit was initialized earlier; never initialize the SoftDevice twice.
+    return BTHomeTelemetry::startOTA(reply);
   }
-  static BLEDfu bledfu;
-  Bluefruit.setTxPower(4);
-  Bluefruit.setName("RAK3401_OTA");
-  bledfu.begin();
-  Bluefruit.Advertising.clearData();
-  Bluefruit.ScanResponse.clearData();
-  Bluefruit.Advertising.setType(BLE_GAP_ADV_TYPE_CONNECTABLE_SCANNABLE_UNDIRECTED);
-  if (!Bluefruit.Advertising.addFlags(BLE_GAP_ADV_FLAGS_LE_ONLY_GENERAL_DISC_MODE) ||
-      !Bluefruit.Advertising.addTxPower() ||
-      !Bluefruit.Advertising.addName()) return false;
-  Bluefruit.Advertising.restartOnDisconnect(true);
-  Bluefruit.Advertising.setInterval(32, 244);
-  Bluefruit.Advertising.setFastTimeout(30);
-  if (!Bluefruit.Advertising.start(0)) return false;
-  uint8_t mac[6] = {0};
-  Bluefruit.getAddr(mac);
-  sprintf(reply, "OK - mac: %02X:%02X:%02X:%02X:%02X:%02X",
-          mac[5], mac[4], mac[3], mac[2], mac[1], mac[0]);
-  return true;
+
+  uint8_t softdeviceEnabled = 0;
+  sd_softdevice_is_enabled(&softdeviceEnabled);
+  if (softdeviceEnabled) {
+    // Partial BLE initialization: re-entering Bluefruit.begin() can crash.
+    strcpy(reply, "ERR: BLE stack partially active; use USB recovery");
+    return true; // Return handled, so CommonCLI preserves the explanation.
+  }
+  // Telemetry disabled at boot: exactly the upstream MeshCore nRF52 BLE OTA path.
+  return NRF52Board::startOTAUpdate(id, reply);
 }
 #endif // ENABLE_BTHOME_TELEMETRY

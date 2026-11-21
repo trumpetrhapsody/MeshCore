@@ -1,13 +1,17 @@
 #pragma once
-
 #if defined(RAK_3401) && defined(ENABLE_BTHOME_TELEMETRY)
 namespace BTHomeTelemetry {
-// Initializes non-connectable BLE reporting, including a startup report.
+// Load settings after LittleFS and the normal repeater have initialized.
+// Missing or invalid settings keep BLE disabled; never alters LoRa preferences.
 bool begin();
-// Called from the regular repeater loop; does not delay LoRa forwarding.
+// Nonblocking, best-effort telemetry work in the ordinary repeater loop.
 void loop();
-// Stops periodic reports so OTA/DFU can reuse the existing BLE SoftDevice.
-// Returns true only if the telemetry BLE stack was initialized.
-bool prepareForOTA();
-}  // namespace BTHomeTelemetry
+// Board-specific CLI commands, shared by USB and authenticated mesh CLI.
+bool handleCommand(const char* command, char* reply);
+// Whether Bluefruit was successfully initialized on this boot.
+bool bleInitialized();
+// Reuse initialized SoftDevice to advertise Nordic DFU bootloader entry.
+// Return true if reply contains a complete result (including an error).
+bool startOTA(char* reply);
+}
 #endif

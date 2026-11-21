@@ -22,6 +22,7 @@ public:
 
 #ifdef ENABLE_BTHOME_TELEMETRY
   bool startOTAUpdate(const char* id, char reply[]) override;
+  bool handleCommand(const char* command, uint32_t sender_timestamp, char* reply) override;
 #endif
 
   #define BATTERY_SAMPLES 8

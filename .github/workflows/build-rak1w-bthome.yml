@@ -23,12 +23,20 @@ jobs:
         run: |
           c++ -std=c++17 -Wall -Wextra -Werror test/bthome/test_bthome_payload.cpp -o /tmp/test_bthome
           /tmp/test_bthome
+      - name: Test BTHome configuration and interval parser
+        run: |
+          c++ -std=c++17 -Wall -Wextra -Werror test/bthome/test_bthome_settings.cpp -o /tmp/test_settings
+          /tmp/test_settings
       - name: Install PlatformIO
         run: pip install -U platformio
       - name: Build firmware
         run: pio run -e RAK_3401_repeater_bthome
       - name: Generate UF2 image
         run: pio run -e RAK_3401_repeater_bthome -t create_uf2
+      - name: Verify Nordic DFU ZIP
+        run: |
+          test -s .pio/build/RAK_3401_repeater_bthome/firmware.zip
+          unzip -t .pio/build/RAK_3401_repeater_bthome/firmware.zip
       - uses: actions/upload-artifact@v4
         with:
           name: rak3401-meshcore-repeater-bthome
@@ -36,4 +44,5 @@ jobs:
             .pio/build/RAK_3401_repeater_bthome/firmware.bin
             .pio/build/RAK_3401_repeater_bthome/firmware.hex
             .pio/build/RAK_3401_repeater_bthome/firmware.uf2
+            .pio/build/RAK_3401_repeater_bthome/firmware.zip
           if-no-files-found: error
