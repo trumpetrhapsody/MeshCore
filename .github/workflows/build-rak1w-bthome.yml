@@ -31,6 +31,8 @@ jobs:
         run: pip install -U platformio
       - name: Build firmware
         run: pio run -e RAK_3401_repeater_bthome
+      - name: Verify unchanged factory repeater build target
+        run: pio run -e RAK_3401_repeater
       - name: Generate UF2 image
         run: pio run -e RAK_3401_repeater_bthome -t create_uf2
       - name: Verify Nordic DFU ZIP
