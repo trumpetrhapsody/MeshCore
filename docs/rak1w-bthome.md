@@ -2,7 +2,7 @@
 
 Experimental firmware, forked from [MeshCore](https://github.com/meshcore-dev/MeshCore).
 
-**Automated build and payload/settings tests PASSED on 2026-11-21. This branch remains NOT hardware-validated.** Keep a known-good stock image and identity/settings backup. [Successful hardened firmware and stock-target build](https://github.com/trumpetrhapsody/MeshCore/actions/runs/44950129255). Hardened image: 35,772 bytes RAM (15.2%) and 415,976 bytes flash (58.4% of its BLE-safe partition); Nordic DFU ZIP verified and included in the build artifact.
+**Latest CI PASS (2026-11-21), but this firmware remains NOT hardware-validated.** Preserve a known-good stock image, radio configuration and identity backup. [Verified BTHome and stock RAK3401 builds, USB UF2 and Nordic DFU ZIP](https://github.com/trumpetrhapsody/MeshCore/actions/runs/44950938557). Hardened image uses 35,788 bytes RAM (15.2%) and 417,032 bytes flash (58.5% of its BLE-safe partition). These figures demonstrate compilation, not LoRa forwarding or OTA success on real hardware.
 
 ## Default behavior and safe disable
 
@@ -55,6 +55,8 @@ BLE advertisement errors are throttled to once per 60 seconds, with telemetry st
 
 Shorter interval = more BLE radio events. But the SoftDevice's initialized standby overhead likely dominates the incremental power consumption; changing from 10 to 30 minutes should save much less than switching Bluetooth OFF and rebooting. Repeatedly enabling/disabling the Nordic SoftDevice every reporting interval is intentionally avoided due to radio and bootloader stability risks. Benchmark idle current and actual repeater forwarding before rooftop installation.
 
+**RAK-specific checks from upstream:** `NRF52_POWER_MANAGEMENT` low-voltage protection code exists, but that compile-time feature is **not enabled by the current RAK3401 build flags**. Don't mistake the existence of the code for an active software low-voltage cutoff. Also check for [MeshCore issue #3738](https://github.com/meshcore-dev/MeshCore/issues/3738): RAK3401/RAK13302 devices on stock v1.18.0 sometimes report RX/TX error 4 despite successful startup; one owner reported recovery with v1.17.1. This is not evidence that our BLE change causes the same fault, but it strengthens the need to compare real RX/TX counters before and after flashing. Verify your **exact RAK3401** bootloader and OTAFIX version before trusting Bluetooth OTA or updating a bootloader.
+
 **Important remaining tests:** real RAK 1W LoRa forwarding during BLE bursts; settings retention, OTA entry and actual DFU ZIP transfer; USB recovery; BTHome discovery; standby current/solar budget. Neither OTA nor electrical draw is hardware verified.
 
 ## Related implementations reviewed
@@ -62,7 +64,7 @@ Shorter interval = more BLE radio events. But the SoftDevice's initialized stand
 - **Ultimate MeshCore** (ESP32 Heltec V4) adds an early-BLE-startup crash guard and delayed stable-boot acknowledgment; this inspired the nRF52 BTHome boot guard, but its Wi-Fi/NimBLE coexistence logic cannot be transplanted onto Nordic hardware.
 - **MeshCore T-Beam Hybrid** (ESP32) keeps both full BLE companion and repeater behavior live; significantly greater LoRa/identity/CLI coupling than passive BTHome advertisements. It also explicitly warns not to mistake MCU temperature for battery temperature.
 - **Meshtastic nRF52** checks `Bluefruit.begin()` before advertising, and supports stopping BLE advertising without requiring teardown of the SoftDevice. Our telemetry uses the same fail-closed pattern, while a power-saving BLE OFF state requires reboot.
-- **MeshCoreNG** emphasizes low-battery guards and conservative default-off features; our feature doesn't override stock RAK low-voltage protection.
+- **MeshCoreNG** adds explicit low-battery guards; our branch does not add such a guard, and the RAK3401 build flags do not currently enable the upstream conditional nRF52 low-voltage shutdown feature.
 - BTHome v2 `0x44` marks the device trigger-based (irregular reporting). We currently retain this intentionally for long, sparse advertising bursts to avoid premature HA unavailability. For strict BTHome periodic reporting semantics `0x40` would be more accurate, at the cost of potentially reporting the device unavailable between infrequent samples. This should be confirmed during HA field tests.
 
-No firmware can guarantee no SoftDevice crash on untested hardware. Even with BLE OFF, custom firmware is not byte-for-byte factory firmware due to the different app flash allocation and additional code.
+The startup boot guard adds one tiny filesystem write/removal per successful enabled boot, not per telemetry advertisement; early brownouts can intentionally latch BLE off until the user rearms it. No firmware can guarantee no SoftDevice crash on untested hardware. Even with BLE OFF, custom firmware is not byte-for-byte factory firmware due to the different app flash allocation and additional code.
