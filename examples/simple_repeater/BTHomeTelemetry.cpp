@@ -61,7 +61,7 @@ void loadSettings() {
   intervalMinutes = BTHomeSettings::kDefaultMinutes;
   if (!InternalFS.exists(kSettingsFile)) return;
 
-  Adafruit_LittleFS_Namespace::File file = InternalFS.open(kSettingsFile, FILE_O_READ);
+  Adafruit_LittleFS_Namespace::File file = InternalFS.open(kSettingsFile, Adafruit_LittleFS_Namespace::FILE_O_READ);
   if (!file) {
     corruptSettings = true;
     return;
@@ -89,7 +89,7 @@ bool persistSettings(bool enable, uint16_t minutes) {
   // LittleFS rename is atomic. The previous configuration is retained if
   // power fails before the new file is committed.
   if (InternalFS.exists(kTempFile)) InternalFS.remove(kTempFile);
-  Adafruit_LittleFS_Namespace::File file = InternalFS.open(kTempFile, FILE_O_WRITE);
+  Adafruit_LittleFS_Namespace::File file = InternalFS.open(kTempFile, Adafruit_LittleFS_Namespace::FILE_O_WRITE);
   if (!file) return false;
   const size_t written = file.write(bytes, sizeof(bytes));
   file.flush();
