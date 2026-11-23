@@ -87,7 +87,14 @@ struct AdvertPath {
   uint8_t path[MAX_PATH_SIZE];
 };
 
+#ifdef ENABLE_HYBRID_ROOM_SERVER
+class HybridRoom;
+#endif
+
 class MyMesh : public BaseChatMesh, public DataStoreHost {
+#ifdef ENABLE_HYBRID_ROOM_SERVER
+  friend class HybridRoom;
+#endif
 public:
   class Listener {
     public:
@@ -127,6 +134,10 @@ public:
   int  getRecentlyHeard(AdvertPath dest[], int max_num);
 
 protected:
+#ifdef ENABLE_HYBRID_ROOM_SERVER
+  mesh::DispatcherAction onRecvPacket(mesh::Packet* packet) override;
+  void onAckRecv(mesh::Packet* packet, uint32_t ack_crc) override;
+#endif
   float getAirtimeBudgetFactor() const override;
   int getInterferenceThreshold() const override;
   bool getCADEnabled() const override;
@@ -216,6 +227,9 @@ public:
   bool hasPendingWork() const;
 
 private:
+#ifdef ENABLE_HYBRID_ROOM_SERVER
+  HybridRoom* _hybrid_room;
+#endif
   void writeOKFrame();
   void writeErrFrame(uint8_t err_code);
   void writeDisabledFrame();
