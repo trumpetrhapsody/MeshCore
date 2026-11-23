@@ -40,9 +40,19 @@ public:
   bool consumeAck(uint32_t ack);
   const mesh::LocalIdentity& identity() const { return _identity; }
   uint32_t countPosts() const { return _total_posts; }
+  bool handleLocalCLI(const char* command, char* reply, size_t reply_size);
+  bool isEnabled() const { return _enabled; }
 
 private:
   enum { MAX_POST_TEXT = 151 };
+  struct Config {
+    uint32_t magic;
+    uint8_t enabled;
+    char name[33];
+    char guest_password[33];
+    char admin_password[33];
+    uint32_t checksum;
+  };
   struct Post {
     mesh::Identity author;
     uint32_t timestamp;
@@ -52,14 +62,21 @@ private:
   mesh::LocalIdentity _identity;
   ClientACL _clients;
   Post _posts[HYBRID_ROOM_POSTS];
+  Config _config;
+  bool _enabled;
   uint16_t _next_post;
   uint32_t _total_posts, _total_pushes;
   uint16_t _next_client;
   unsigned long _next_push, _next_advert, _next_flood_advert;
   unsigned long _dirty_acl;
+  unsigned long _dirty_posts;
   uint64_t _uptime_ms;
   uint32_t _last_ms;
 
+  bool loadConfig();
+  bool saveConfig();
+  bool loadHistory();
+  bool saveHistory();
   void sendAdvert(bool flood);
   void scheduleAdvert();
   void sendFlood(mesh::Packet* packet, uint32_t delay, uint8_t hash_size=1);
@@ -75,7 +92,7 @@ private:
   void handleLogin(mesh::Packet* packet, const mesh::Identity& sender,
                    const uint8_t* secret, uint8_t* data, size_t len);
   void handleKnown(mesh::Packet* packet, ClientInfo& client,
-                   uint8_t* data, size_t len);
+                   uint8_t* data, size_t len, uint8_t type);
   void handlePath(ClientInfo& client, uint8_t* data, size_t len);
   void storePost(const mesh::Identity& author, const char* text);
   void pushPost(ClientInfo& client, Post& post);
