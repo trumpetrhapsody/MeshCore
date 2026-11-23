@@ -1,4 +1,7 @@
 #include "MyMesh.h"
+#ifdef ENABLE_HYBRID_ROOM_SERVER
+#include "HybridRoom.h"
+#endif
 
 #include <Arduino.h> // needed for PlatformIO
 #ifdef ENABLE_WIFI_INTERFACE
@@ -258,6 +261,23 @@ int MyMesh::getFromOfflineQueue(uint8_t frame[]) {
   }
   return 0; // queue is empty
 }
+
+#ifdef ENABLE_HYBRID_ROOM_SERVER
+mesh::DispatcherAction MyMesh::onRecvPacket(mesh::Packet* packet) {
+  if (_hybrid_room && _hybrid_room->isAddressed(packet)) {
+    return _hybrid_room->receive(packet);
+  }
+  return mesh::Mesh::onRecvPacket(packet);
+}
+
+void MyMesh::onAckRecv(mesh::Packet* packet, uint32_t ack_crc) {
+  if (_hybrid_room && _hybrid_room->consumeAck(ack_crc)) {
+    packet->markDoNotRetransmit();
+    return;
+  }
+  BaseChatMesh::onAckRecv(packet, ack_crc);
+}
+#endif
 
 float MyMesh::getAirtimeBudgetFactor() const {
   return _prefs.airtime_factor;
@@ -900,6 +920,9 @@ void MyMesh::onSendTimeout() {}
 MyMesh::MyMesh(mesh::Radio &radio, mesh::RNG &rng, mesh::RTCClock &rtc, SimpleMeshTables &tables, DataStore& store)
     : BaseChatMesh(radio, *new ArduinoMillis(), rng, rtc, *new StaticPoolPacketManager(16), tables),
       _serial(NULL), telemetry(MAX_PACKET_PAYLOAD - 4), _store(&store), _listener(NULL), _iter(0) {
+#ifdef ENABLE_HYBRID_ROOM_SERVER
+  _hybrid_room = nullptr;
+#endif
   _iter_started = false;
   _cli_rescue = false;
   cli_command[0] = 0;
@@ -1007,6 +1030,11 @@ void MyMesh::begin() {
   radio_driver.setRxBoostedGainMode(_prefs.rx_boosted_gain);
 
   board.attachDynamicPrefs(_prefs.getCustom());
+
+#ifdef ENABLE_HYBRID_ROOM_SERVER
+  _hybrid_room = new HybridRoom(*this);
+  if (_hybrid_room) _hybrid_room->begin();
+#endif
 
   MESH_DEBUG_PRINTLN("RX Boosted Gain Mode: %s",
                      radio_driver.getRxBoostedGainMode() ? "Enabled" : "Disabled");
@@ -2079,6 +2107,12 @@ void MyMesh::enterCLIRescue() {
 bool MyMesh::handleCommand(const char* command, uint32_t sender_timestamp, char* reply) {
   while (*command == ' ') command++; // skip leading spaces
 
+#ifdef ENABLE_HYBRID_ROOM_SERVER
+  if (_hybrid_room && _hybrid_room->handleLocalCLI(command, reply, sizeof(reply_buf))) {
+    return true;
+  }
+#endif
+
   if (strlen(command) > 4 && command[2] == '|') { // optional prefix (for companion radio CLI)
     memcpy(reply, command, 3);                    // reflect the prefix back
     reply += 3;
@@ -2414,6 +2448,9 @@ void MyMesh::checkSerialInterface() {
 
 void MyMesh::loop() {
   BaseChatMesh::loop();
+#ifdef ENABLE_HYBRID_ROOM_SERVER
+  if (_hybrid_room) _hybrid_room->loop();
+#endif
 
   if (_cli_rescue) {
     checkCLIRescueCmd();
