@@ -64,6 +64,7 @@ private:
   Post _posts[HYBRID_ROOM_POSTS];
   Config _config;
   bool _enabled;
+  bool _identity_collision;
   uint16_t _next_post;
   uint32_t _total_posts, _total_pushes;
   uint16_t _next_client;
