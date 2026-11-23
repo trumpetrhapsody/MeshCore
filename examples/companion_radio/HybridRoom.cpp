@@ -461,18 +461,19 @@ void HybridRoom::handleKnown(mesh::Packet* packet, ClientInfo& client,
     uint8_t flags = data[4] >> 2;
     if (flags != TXT_TYPE_PLAIN ||
         (client.permissions & PERM_ACL_ROLE_MASK) == PERM_ACL_GUEST) return;
-    size_t text_len = strnlen(reinterpret_cast<char*>(&data[5]), len - 5);
-    if (text_len > MAX_POST_TEXT) text_len = MAX_POST_TEXT;
-    if (!text_len) return;
+    size_t message_len = strnlen(reinterpret_cast<char*>(&data[5]), len - 5);
+    if (!message_len) return;
     if (!retry) {
+      size_t stored_len = min(message_len, (size_t)MAX_POST_TEXT);
       char text[MAX_POST_TEXT + 1];
-      memcpy(text, &data[5], text_len);
-      text[text_len] = 0;
+      memcpy(text, &data[5], stored_len);
+      text[stored_len] = 0;
       storePost(client.id, text);
     }
+    // ACK must hash the original message, not the truncated storage copy.
     uint32_t hash;
     mesh::Utils::sha256(reinterpret_cast<uint8_t*>(&hash), 4,
-                         data, 5 + text_len, client.id.pub_key, PUB_KEY_SIZE);
+                         data, 5 + message_len, client.id.pub_key, PUB_KEY_SIZE);
     replyAck(packet, client, hash, 200);
     return;
   }
