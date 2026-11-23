@@ -1,4 +1,10 @@
 #include "MyMesh.h"
+#ifdef ENABLE_HYBRID_ROOM_SERVER
+#include "HybridRoom.h"
+#define COMPANION_PACKET_POOL_SIZE 32
+#else
+#define COMPANION_PACKET_POOL_SIZE 16
+#endif
 
 #include <Arduino.h> // needed for PlatformIO
 #ifdef ENABLE_WIFI_INTERFACE
@@ -258,6 +264,23 @@ int MyMesh::getFromOfflineQueue(uint8_t frame[]) {
   }
   return 0; // queue is empty
 }
+
+#ifdef ENABLE_HYBRID_ROOM_SERVER
+mesh::DispatcherAction MyMesh::onRecvPacket(mesh::Packet* packet) {
+  if (_hybrid_room && _hybrid_room->isAddressed(packet)) {
+    return _hybrid_room->receive(packet);
+  }
+  return mesh::Mesh::onRecvPacket(packet);
+}
+
+void MyMesh::onAckRecv(mesh::Packet* packet, uint32_t ack_crc) {
+  if (_hybrid_room && _hybrid_room->consumeAck(ack_crc)) {
+    packet->markDoNotRetransmit();
+    return;
+  }
+  BaseChatMesh::onAckRecv(packet, ack_crc);
+}
+#endif
 
 float MyMesh::getAirtimeBudgetFactor() const {
   return _prefs.airtime_factor;
@@ -898,8 +921,11 @@ uint32_t MyMesh::calcDirectTimeoutMillisFor(uint32_t pkt_airtime_millis, uint8_t
 void MyMesh::onSendTimeout() {}
 
 MyMesh::MyMesh(mesh::Radio &radio, mesh::RNG &rng, mesh::RTCClock &rtc, SimpleMeshTables &tables, DataStore& store)
-    : BaseChatMesh(radio, *new ArduinoMillis(), rng, rtc, *new StaticPoolPacketManager(16), tables),
+    : BaseChatMesh(radio, *new ArduinoMillis(), rng, rtc, *new StaticPoolPacketManager(COMPANION_PACKET_POOL_SIZE), tables),
       _serial(NULL), telemetry(MAX_PACKET_PAYLOAD - 4), _store(&store), _listener(NULL), _iter(0) {
+#ifdef ENABLE_HYBRID_ROOM_SERVER
+  _hybrid_room = nullptr;
+#endif
   _iter_started = false;
   _cli_rescue = false;
   cli_command[0] = 0;
@@ -1007,6 +1033,11 @@ void MyMesh::begin() {
   radio_driver.setRxBoostedGainMode(_prefs.rx_boosted_gain);
 
   board.attachDynamicPrefs(_prefs.getCustom());
+
+#ifdef ENABLE_HYBRID_ROOM_SERVER
+  _hybrid_room = new HybridRoom(*this);
+  if (_hybrid_room) _hybrid_room->begin();
+#endif
 
   MESH_DEBUG_PRINTLN("RX Boosted Gain Mode: %s",
                      radio_driver.getRxBoostedGainMode() ? "Enabled" : "Disabled");
@@ -2086,6 +2117,12 @@ bool MyMesh::handleCommand(const char* command, uint32_t sender_timestamp, char*
     command += 3;
   }
 
+#ifdef ENABLE_HYBRID_ROOM_SERVER
+  if (_hybrid_room && _hybrid_room->handleLocalCLI(command, reply, sizeof(reply_buf) - 3)) {
+    return true;
+  }
+#endif
+
   if (_prefs.getRadioPrefs()->handleCommand(command, sender_timestamp, reply)) {  // is radio CLI command?
     if (_prefs.getRadioPrefs()->isDirty()) { savePrefs(); }
     return true;
@@ -2414,6 +2451,9 @@ void MyMesh::checkSerialInterface() {
 
 void MyMesh::loop() {
   BaseChatMesh::loop();
+#ifdef ENABLE_HYBRID_ROOM_SERVER
+  if (_hybrid_room) _hybrid_room->loop();
+#endif
 
   if (_cli_rescue) {
     checkCLIRescueCmd();

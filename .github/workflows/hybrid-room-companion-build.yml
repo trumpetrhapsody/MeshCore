@@ -1,0 +1,40 @@
+name: Experimental Hybrid Room + Companion
+on:
+  push:
+    branches:
+      - hybrid-room-companion
+  pull_request:
+    paths:
+      - 'examples/companion_radio/**'
+      - 'variants/xiao_s3_wio/hybrid.ini'
+      - 'platformio.ini'
+      - '.github/workflows/hybrid-room-companion-build.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        environment:
+          - Xiao_S3_WIO_hybrid_room_companion_usb
+          - Xiao_S3_WIO_hybrid_room_companion_usb_wifi
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+      - name: Set up PlatformIO
+        uses: ./.github/actions/setup-build-environment
+      - name: Compile firmware
+        run: pio run -e ${{ matrix.environment }}
+      - name: Publish binaries (only on successful build)
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.environment }}
+          path: |
+            .pio/build/${{ matrix.environment }}/firmware.bin
+            .pio/build/${{ matrix.environment }}/merged-firmware.bin
+          if-no-files-found: warn
