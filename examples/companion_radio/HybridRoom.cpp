@@ -65,7 +65,7 @@ void boundedCopy(char* dst, const char* src, size_t capacity) {
 }
 
 HybridRoom::HybridRoom(MyMesh& owner)
-  : _mesh(owner), _enabled(false), _next_post(0), _total_posts(0),
+  : _mesh(owner), _enabled(false), _identity_collision(false), _next_post(0), _total_posts(0),
     _total_pushes(0), _next_client(0), _next_push(0), _next_advert(0),
     _next_flood_advert(0), _dirty_acl(0), _dirty_posts(0),
     _uptime_ms(0), _last_ms(0) {
@@ -154,6 +154,7 @@ void HybridRoom::begin() {
   // a room identity shadow the HA companion's destination hash.
   if (_identity.isHashMatch(_mesh.self_id.pub_key)) {
     MESH_DEBUG_PRINTLN("Hybrid room identity hash collides with companion identity; room disabled");
+    _identity_collision = true;
     _enabled = false;
     return;
   }
@@ -197,7 +198,8 @@ bool HybridRoom::handleLocalCLI(const char* cmd, char* reply, size_t reply_size)
     if (strncmp(cmd, s.prefix, strlen(s.prefix)) != 0) continue;
     const char* value = cmd + strlen(s.prefix);
     size_t len = strlen(value);
-    if (len < s.min_len || len >= s.capacity) {
+    if (len < s.min_len || len >= s.capacity ||
+        (s.dest == _config.name && !AdvertDataParser::isValidName(value))) {
       snprintf(reply, reply_size, "ERR - expected %u..%u characters",
                (unsigned)s.min_len, (unsigned)(s.capacity - 1));
       return true;
@@ -213,10 +215,11 @@ bool HybridRoom::handleLocalCLI(const char* cmd, char* reply, size_t reply_size)
       return true;
     }
     bool enable = cmd[13] == '1';
-    if (enable && (strlen(_config.guest_password) < 8 ||
+    if (enable && (_identity_collision ||
+                   strlen(_config.guest_password) < 8 ||
                    strlen(_config.admin_password) < 12 ||
                    strcmp(_config.guest_password, _config.admin_password) == 0)) {
-      snprintf(reply, reply_size, "ERR - set distinct guest (8+) and admin (12+) passwords first");
+      snprintf(reply, reply_size, "ERR - check identity collision and distinct guest (8+)/admin (12+) passwords");
       return true;
     }
     _config.enabled = enable;
