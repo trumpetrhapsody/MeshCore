@@ -2107,18 +2107,18 @@ void MyMesh::enterCLIRescue() {
 bool MyMesh::handleCommand(const char* command, uint32_t sender_timestamp, char* reply) {
   while (*command == ' ') command++; // skip leading spaces
 
-#ifdef ENABLE_HYBRID_ROOM_SERVER
-  if (_hybrid_room && _hybrid_room->handleLocalCLI(command, reply, sizeof(reply_buf))) {
-    return true;
-  }
-#endif
-
   if (strlen(command) > 4 && command[2] == '|') { // optional prefix (for companion radio CLI)
     memcpy(reply, command, 3);                    // reflect the prefix back
     reply += 3;
     *reply = 0;
     command += 3;
   }
+
+#ifdef ENABLE_HYBRID_ROOM_SERVER
+  if (_hybrid_room && _hybrid_room->handleLocalCLI(command, reply, sizeof(reply_buf) - 3)) {
+    return true;
+  }
+#endif
 
   if (_prefs.getRadioPrefs()->handleCommand(command, sender_timestamp, reply)) {  // is radio CLI command?
     if (_prefs.getRadioPrefs()->isDirty()) { savePrefs(); }
