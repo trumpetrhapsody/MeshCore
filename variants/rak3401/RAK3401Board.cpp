@@ -3,6 +3,11 @@
 
 #include "RAK3401Board.h"
 
+#ifdef ENABLE_BTHOME_TELEMETRY
+#include <bluefruit.h>
+#include "BTHomeTelemetry.h"
+#endif
+
 #ifdef NRF52_POWER_MANAGEMENT
 // Static configuration for power management
 // Values set in variant.h defines
@@ -64,3 +69,32 @@ void RAK3401Board::begin() {
   digitalWrite(SX126X_POWER_EN, HIGH);
   delay(1);  // SKY66122 turn-on settling time (tON = 3us typ)
 }
+
+#ifdef ENABLE_BTHOME_TELEMETRY
+#include <nrf_soc.h>
+
+// Reuse MeshCore's board extension point; also available to authorized remote
+// repeater admins (and USB CLI). Do not change the shared CommonCLI parser.
+bool RAK3401Board::handleCommand(const char* command, uint32_t sender_timestamp,
+                                 char* reply) {
+  (void)sender_timestamp;
+  return BTHomeTelemetry::handleCommand(command, reply);
+}
+
+bool RAK3401Board::startOTAUpdate(const char* id, char reply[]) {
+  if (BTHomeTelemetry::bleInitialized()) {
+    // Bluefruit was initialized earlier; never initialize the SoftDevice twice.
+    return BTHomeTelemetry::startOTA(reply);
+  }
+
+  uint8_t softdeviceEnabled = 0;
+  sd_softdevice_is_enabled(&softdeviceEnabled);
+  if (softdeviceEnabled) {
+    // Partial BLE initialization: re-entering Bluefruit.begin() can crash.
+    strcpy(reply, "ERR: BLE stack partially active; use USB recovery");
+    return true; // Return handled, so CommonCLI preserves the explanation.
+  }
+  // Telemetry disabled at boot: exactly the upstream MeshCore nRF52 BLE OTA path.
+  return NRF52Board::startOTAUpdate(id, reply);
+}
+#endif // ENABLE_BTHOME_TELEMETRY

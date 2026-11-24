@@ -3,6 +3,10 @@
 
 #include "MyMesh.h"
 
+#if defined(RAK_3401) && defined(ENABLE_BTHOME_TELEMETRY)
+#include "BTHomeTelemetry.h"
+#endif
+
 #ifdef DISPLAY_CLASS
   #include "UITask.h"
   static UITask ui_task(board, display);
@@ -106,6 +110,10 @@ void setup() {
 
   the_mesh.begin(fs);
 
+#if defined(RAK_3401) && defined(ENABLE_BTHOME_TELEMETRY)
+  BTHomeTelemetry::begin();
+#endif
+
 #ifdef DISPLAY_CLASS
   ui_task.begin(the_mesh.getNodePrefs(), FIRMWARE_BUILD_DATE, FIRMWARE_VERSION);
 #endif
@@ -196,6 +204,9 @@ void loop() {
 #endif
 
   the_mesh.loop();
+#if defined(RAK_3401) && defined(ENABLE_BTHOME_TELEMETRY)
+  BTHomeTelemetry::loop();
+#endif
   sensors.loop();
 #ifdef DISPLAY_CLASS
   ui_task.loop();
